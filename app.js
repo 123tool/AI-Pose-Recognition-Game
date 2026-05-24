@@ -8,9 +8,9 @@ let gameActive = false;
 let score = 0;
 
 // Logika Tracking Aksi (Squat State Machine)
-let currentStage = "up"; // Keadaan tubuh: 'up' (berdiri) atau 'down' (jongkok)
-const SQUAT_THRESHOLD_DOWN = 110; // Sudut lutut di bawah nilai ini dianggap jongkok
-const SQUAT_THRESHOLD_UP = 150;   // Sudut lutut di atas nilai ini dianggap kembali berdiri
+let currentStage = "up"; 
+const SQUAT_THRESHOLD_DOWN = 110; 
+const SQUAT_THRESHOLD_UP = 150;   
 
 // ====== INITIALIZATION ======
 window.addEventListener('DOMContentLoaded', async () => {
@@ -21,32 +21,37 @@ window.addEventListener('DOMContentLoaded', async () => {
     const btnStart = document.getElementById('btn-start');
     const btnReset = document.getElementById('btn-reset');
 
-    // 1. Setup Kamera Web
+    // 1. Setup Kamera Web dengan Konfigurasi Fleksibel (Mobile Friendly)
     try {
         await setupCamera();
     } catch (e) {
-        alert("Gagal mengakses kamera. Pastikan izin kamera telah diberikan.");
-        console.error(e);
+        console.error("Kamera Error:", e);
+        document.getElementById('action-status').textContent = "Akses Kamera Ditolak/Error";
+        alert("Gagal mengakses kamera. Mohon izinkan akses kamera di pengaturan browser Anda.");
         return;
     }
 
-    // 2. Load Model PoseNet
+    // 2. Load Model PoseNet & Sembunyikan Overlay jika Sukses
     try {
-        // Menggunakan arsitektur MobileNetV1 untuk performa real-time yang optimal di browser/HP
         net = await posenet.load({
             architecture: 'MobileNetV1',
             outputStride: 16,
-            inputResolution: { width: 640, height: 480 },
-            multiplier: 0.75
+            inputResolution: { width: 257, height: 257 }, // Diturunkan sedikit agar inisialisasi di HP super cepat
+            multiplier: 0.50 // Lebih ringan dan anti-lag untuk browser mobile
         });
-        // Sembunyikan overlay loading jika model berhasil dimuat
-        document.getElementById('loading-overlay').style.opacity = 0;
-        setTimeout(() => {
-            document.getElementById('loading-overlay').style.display = 'none';
-        }, 500);
+        
+        // Hilangkan overlay loading
+        const overlay = document.getElementById('loading-overlay');
+        if (overlay) {
+            overlay.style.opacity = 0;
+            setTimeout(() => {
+                overlay.style.display = 'none';
+            }, 500);
+        }
     } catch (e) {
-        alert("Gagal memuat model PoseNet AI.");
-        console.error(e);
+        console.error("AI Model Error:", e);
+        document.getElementById('action-status').textContent = "Gagal memuat Model AI";
+        alert("Gagal memuat model pendeteksi pose AI.");
         return;
     }
 
@@ -55,7 +60,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         if (!gameActive) {
             gameActive = true;
             btnStart.textContent = "PAUSE";
-            btnStart.style.backgroundColor = "#ef4444"; // Ubah jadi warna merah saat bermain
+            btnStart.style.backgroundColor = "#ef4444"; 
             document.getElementById('action-status').textContent = "Mulai Bergerak!";
         } else {
             gameActive = false;
@@ -74,66 +79,84 @@ window.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('confidence-text').textContent = "Akurasi: 0%";
     });
 
-    // Run Loop Estimasi Pose
+    // Mulai loop deteksi pose setelah semua siap
     detectPoseLoop();
 });
 
-// Fungsi untuk Akses Webcam
+// Fungsi Akses Webcam Mandiri & Fleksibel
 async function setupCamera() {
-    video.width = 640;
-    video.height = 480;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Browser tidak mendukung WebRTC / getUserMedia");
+    }
 
-    const stream = await navigator.mediaDevices.getUserMedia({
+    const constraints = {
         video: {
-            width: 640,
-            height: 480,
-            facingMode: "user"
+            facingMode: "user",
+            width: { ideal: 640 },
+            height: { ideal: 480 }
         },
         audio: false
-    });
+    };
+
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = stream;
 
     return new Promise((resolve) => {
         video.onloadedmetadata = () => {
-            video.play();
-            resolve(video);
+            video.play().then(() => {
+                resolve(video);
+            }).catch((err) => {
+                console.error("Video play terhambat:", err);
+                resolve(video);
+            });
         };
     });
 }
 
 // ====== MAIN LOOP AI DETEKSI ======
 async function detectPoseLoop() {
-    // Sesuaikan ukuran resolusi canvas dengan input video stream
-    canvas.width = video.width;
-    canvas.height = video.height;
-
     async function poseDetectionFrame() {
-        // Melakukan estimasi pose tunggal (single-pose) untuk optimasi kecepatan frame (FPS)
-        const pose = await net.estimateSinglePose(video, {
-            flipHorizontal: true
-        });
+        // Keamanan ekstra: jika stream video belum siap, lewati frame ini
+        if (!video.videoWidth || !video.videoHeight) {
+            requestAnimationFrame(poseDetectionFrame);
+            return;
+        }
 
-        poses = [pose];
+        // Sinkronisasi dinamis ukuran canvas dengan feed asli video device
+        if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+        }
 
-        // Bersihkan dan Gambar Ulang Canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        // Render Feed Kamera di Canvas (Efek Mirror)
-        ctx.save();
-        ctx.scale(-1, 1);
-        ctx.translate(-canvas.width, 0);
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        ctx.restore();
+        try {
+            // Estimasi pose tunggal
+            const pose = await net.estimateSinglePose(video, {
+                flipHorizontal: true
+            });
 
-        // Gambar Titik Kunci dan Garis Kerangka jika akurasi deteksi mencukupi
-        if (pose.score >= 0.2) {
-            drawKeypoints(pose.keypoints, ctx);
-            drawSkeleton(pose.keypoints, ctx);
+            poses = [pose];
+
+            // Bersihkan Canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            // Jalankan algoritma pengenalan aksi jika game sedang aktif
-            if (gameActive) {
-                checkActionRecognition(pose.keypoints, pose.score);
+            // Gambar Feed Kamera (Mirroring Mode)
+            ctx.save();
+            ctx.scale(-1, 1);
+            ctx.translate(-canvas.width, 0);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            ctx.restore();
+
+            // Gambar Skeleton & Titik Sendi jika akurasi mencukupi
+            if (pose.score >= 0.15) {
+                drawKeypoints(pose.keypoints, ctx);
+                drawSkeleton(pose.keypoints, ctx);
+                
+                if (gameActive) {
+                    checkActionRecognition(pose.keypoints, pose.score);
+                }
             }
+        } catch (err) {
+            console.error("Gagal melakukan estimasi frame:", err);
         }
 
         requestAnimationFrame(poseDetectionFrame);
@@ -143,7 +166,6 @@ async function detectPoseLoop() {
 }
 
 // ====== MATH ALGORITHM: MENGHITUNG SUDUT SENDI ======
-// Menggunakan trigonometri (Atan2) untuk mencari sudut di antara 3 titik kunci (misal: Pinggul -> Lutut -> Pergelangan Kaki)
 function calculateAngle(p1, p2, p3) {
     let radians = Math.atan2(p3.y - p2.y, p3.x - p2.x) - Math.atan2(p1.y - p2.y, p1.x - p2.x);
     let angle = Math.abs((radians * 180.0) / Math.PI);
@@ -154,42 +176,35 @@ function calculateAngle(p1, p2, p3) {
     return angle;
 }
 
-// ====== LOGIKA REKOGNISI AKSI (SQUAT ENGINE) ======
+// ====== LOGIKA REKOGNISI SQUAT ======
 function checkActionRecognition(keypoints, totalScore) {
-    // Ambil koordinat sendi yang dibutuhkan untuk mendeteksi Squat sebelah kiri atau kanan
     const hip = keypoints[11];   // Left Hip
     const knee = keypoints[13];  // Left Knee
     const ankle = keypoints[15]; // Left Ankle
 
-    // Pastikan akurasi deteksi untuk ketiga sendi utama di atas bernilai tinggi
-    if (hip.score > 0.5 && knee.score > 0.5 && ankle.score > 0.5) {
-        
-        // Hitung sudut sendi lutut
+    if (hip.score > 0.4 && knee.score > 0.4 && ankle.score > 0.4) {
         const kneeAngle = calculateAngle(hip.position, knee.position, ankle.position);
         
-        // Update Status Bar Akurasi Akumulatif di UI
-        const avgConfidence = ((hip.score + knee.score + knee.score) / 3 * 100).toFixed(0);
+        const avgConfidence = ((hip.score + knee.score + ankle.score) / 3 * 100).toFixed(0);
         document.getElementById('confidence-bar').style.width = `${avgConfidence}%`;
         document.getElementById('confidence-text').textContent = `Akurasi: ${avgConfidence}%`;
 
-        // Deteksi State Squat: Dari Berdiri (Up) -> Turun Jongkok (Down) -> Kembali Berdiri (Up = +1 Skor)
+        // Logika Finite State Machine Squat
         if (kneeAngle < SQUAT_THRESHOLD_DOWN && currentStage === "up") {
             currentStage = "down";
             document.getElementById('action-status').textContent = "JONGKOK TERDETEKSI!";
-            document.getElementById('action-status').style.color = "#3b82f6"; // Berubah warna Biru
+            document.getElementById('action-status').style.color = "#3b82f6";
         }
         
         if (kneeAngle > SQUAT_THRESHOLD_UP && currentStage === "down") {
             currentStage = "up";
             score++;
             
-            // Update UI Score & Trigger Animasi Efek
             const scoreDisplay = document.getElementById('score-counter');
             scoreDisplay.textContent = score;
             document.getElementById('action-status').textContent = "SQUAT BERHASIL! +1";
-            document.getElementById('action-status').style.color = "var(--accent-neon)"; // Neon Hijau
+            document.getElementById('action-status').style.color = "var(--accent-neon)";
 
-            // Efek Flash Animasi Ringkas pada Skor
             scoreDisplay.style.transform = "scale(1.2)";
             setTimeout(() => { scoreDisplay.style.transform = "scale(1)"; }, 200);
         }
@@ -199,33 +214,33 @@ function checkActionRecognition(keypoints, totalScore) {
     }
 }
 
-// ====== DRAWING UTILITIES (CANVAS RENDERING) ======
+// ====== DRAWING UTILITIES ======
 function drawKeypoints(keypoints, ctx) {
     keypoints.forEach(keypoint => {
-        if (keypoint.score > 0.5) {
+        if (keypoint.score > 0.4) {
             const { y, x } = keypoint.position;
             ctx.beginPath();
             ctx.arc(x, y, 6, 0, 2 * Math.PI);
-            ctx.fillStyle = "rgba(168, 85, 247, 1)"; // Titik Ungu Glow
+            ctx.fillStyle = "rgba(168, 85, 247, 1)";
             ctx.fill();
             
             ctx.beginPath();
             ctx.arc(x, y, 3, 0, 2 * Math.PI);
-            ctx.fillStyle = "#fff"; // Inti Putih
+            ctx.fillStyle = "#fff";
             ctx.fill();
         }
     });
 }
 
 function drawSkeleton(keypoints, ctx) {
-    const adjacentKeypoints = posenet.getAdjacentKeyPoints(keypoints, 0.5);
+    const adjacentKeypoints = posenet.getAdjacentKeyPoints(keypoints, 0.4);
 
     adjacentKeypoints.forEach((keypoints) => {
         ctx.beginPath();
         ctx.moveTo(keypoints[0].position.x, keypoints[0].position.y);
         ctx.lineTo(keypoints[1].position.x, keypoints[1].position.y);
         ctx.lineWidth = 3;
-        ctx.strokeStyle = "rgba(16, 185, 129, 0.8)"; // Garis Neon Emerald Green
+        ctx.strokeStyle = "rgba(16, 185, 129, 0.8)";
         ctx.stroke();
     });
 }

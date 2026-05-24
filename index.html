@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Pose Tracker & Action Game</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet@2.2.2/dist/posenet.min.js"></script>
+</head>
+<body>
+
+    <div class="game-container">
+        <header class="game-header">
+            <div class="brand">
+                <span class="badge-live">LIVE AI</span>
+                <h1>POSE PULSE</h1>
+            </div>
+            <div class="target-action">
+                <span class="label">TARGET GERAKAN</span>
+                <div id="target-display" class="target-box">SQUAT</div>
+            </div>
+        </header>
+
+        <div class="main-arena">
+            <div class="video-wrapper">
+                <div class="loading-overlay" id="loading-overlay">
+                    <div class="spinner"></div>
+                    <p>Menginisialisasi Model AI...</p>
+                </div>
+                <video id="video" playsinline style="display: none;"></video>
+                <canvas id="canvas"></canvas>
+            </div>
+
+            <div class="dashboard">
+                <div class="stat-card score-card">
+                    <h3>SKOR ANDA</h3>
+                    <div class="counter" id="score-counter">0</div>
+                </div>
+
+                <div class="stat-card status-card">
+                    <h3>DETEKSI AKSI</h3>
+                    <div class="action-status" id="action-status">Mencari Pose...</div>
+                    <div class="confidence-bar-container">
+                        <div class="confidence-bar" id="confidence-bar" style="width: 0%;"></div>
+                    </div>
+                    <span class="accuracy-text" id="confidence-text">Akurasi: 0%</span>
+                </div>
+
+                <div class="control-box">
+                    <button id="btn-start" class="btn btn-primary">MULAI GAME</button>
+                    <button id="btn-reset" class="btn btn-secondary">RESET</button>
+                </div>
+            </div>
+        </div>
+
+        <footer class="game-footer">
+            <p>Pastikan seluruh tubuh Anda terlihat di kamera untuk akurasi terbaik.</p>
+        </footer>
+    </div>
+
+</body>
+</html>

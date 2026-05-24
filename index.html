@@ -25,11 +25,13 @@
 
         <div class="main-arena">
             <div class="video-wrapper">
+                <!-- Overlay loading (akan hilang setelah model siap) -->
                 <div class="loading-overlay" id="loading-overlay">
                     <div class="spinner"></div>
                     <p>Menginisialisasi Model AI...</p>
                 </div>
-                <video id="video" playsinline style="display: none;"></video>
+                <!-- Video dan canvas ditumpuk, video di belakang -->
+                <video id="video" playsinline autoplay muted></video>
                 <canvas id="canvas"></canvas>
             </div>
 
@@ -60,5 +62,7 @@
         </footer>
     </div>
 
+    <!-- Pastikan file JavaScript dimuat -->
+    <script src="script.js"></script>
 </body>
 </html>
